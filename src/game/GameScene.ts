@@ -20,7 +20,7 @@ const GARBAGE_EMOJI = "🗑️";
 const PAUSE_OVERLAY_ALPHA = 0.6; // dimming of the pause overlay
 
 // ── Phase 2 (hell mode) ─────────────────────────────────────────────────────
-const PHASE_1_DURATION_SECONDS = 60; // active play time before phase 2 starts
+const PHASE_1_DURATION_SECONDS = 20; // active play time before phase 2 starts
 const PHASE_2_WARNING_SECONDS = 5; // warning shown this many seconds before phase 2
 const BOMB_CHANCE = 0.1; // phase 2: fraction of drops that are bombs
 const STAR_CHANCE = 0.1; // phase 2: fraction of drops that are bonus stars
