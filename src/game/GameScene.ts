@@ -1,4 +1,9 @@
 import Phaser from "phaser";
+<<<<<<< HEAD
+import { GAME_CONFIG } from "./gameConfig";
+import { pickItem } from "./items";
+import type { FallingItem, ItemKind } from "./types";
+=======
 
 // ── Gameplay parameters (tune here) ─────────────────────────────────────────
 const PLAYER_SPEED = 340; // px/sec horizontal cat movement
@@ -20,8 +25,8 @@ const GARBAGE_EMOJI = "🗑️";
 const PAUSE_OVERLAY_ALPHA = 0.6; // dimming of the pause overlay
 
 // ── Phase 2 (hell mode) ─────────────────────────────────────────────────────
-const PHASE_1_DURATION_SECONDS = 20; // active play time before phase 2 starts
-const PHASE_2_WARNING_SECONDS = 5; // warning shown this many seconds before phase 2
+const PHASE_2_SCORE_THRESHOLD = 20; // score needed to reach phase 2
+const PHASE_2_WARNING_SCORE = 5; // warning shown this many points before the threshold
 const BOMB_CHANCE = 0.1; // phase 2: fraction of drops that are bombs
 const STAR_CHANCE = 0.1; // phase 2: fraction of drops that are bonus stars
 const BOMB_EMOJI = "💣";
@@ -37,6 +42,7 @@ interface FallingItem {
   sprite: Phaser.GameObjects.Text;
   kind: ItemKind;
 }
+>>>>>>> 89b6d45cafa175e742379ffec5e5c9f7eeb3c56a
 
 /**
  * "Hungry Cat" — a cat catches food falling from the sky.
@@ -46,6 +52,9 @@ interface FallingItem {
  * - Let food fall to the ground: lose a life.
  * - 10 lives in total; game over when they run out (10 missed foods = instant loss).
  * - Fall speed and spawn rate grow while you play.
+ *
+ * All tunable values live in `gameConfig.ts` — a game designer can change
+ * numbers, emojis, colors and texts there without touching this file.
  */
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Text;
@@ -57,7 +66,7 @@ export class GameScene extends Phaser.Scene {
   private livesText!: Phaser.GameObjects.Text;
 
   private score = 0;
-  private lives = START_LIVES;
+  private lives = GAME_CONFIG.scoring.startLives;
   private elapsed = 0; // seconds since game start
   private spawnTimer = 0; // ms accumulated toward the next drop
   private gameOver = false;
@@ -75,11 +84,12 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     const { width, height } = this.scale;
+    const { ui, player, phases } = GAME_CONFIG;
 
     // Reset everything (scene.restart() reuses this instance).
     this.items = [];
     this.score = 0;
-    this.lives = START_LIVES;
+    this.lives = GAME_CONFIG.scoring.startLives;
     this.elapsed = 0;
     this.spawnTimer = 0;
     this.gameOver = false;
@@ -87,31 +97,33 @@ export class GameScene extends Phaser.Scene {
     this.phase = 1;
     this.phaseWarningShown = false;
     this.phaseWarning = null;
-    this.cameras.main.setBackgroundColor(PHASE_1_BACKGROUND);
+    this.cameras.main.setBackgroundColor(phases.phase1Background);
 
     this.player = this.add
-      .text(width / 2, height - 52, "🐱", { fontSize: "52px" })
+      .text(width / 2, height - player.yFromBottom, player.emoji, {
+        fontSize: player.fontSize,
+      })
       .setOrigin(0.5);
 
-    this.scoreText = this.add.text(20, 14, "", {
-      fontFamily: "system-ui, sans-serif",
-      fontSize: "22px",
-      color: "#1e293b",
+    this.scoreText = this.add.text(ui.scoreX, ui.hudY, "", {
+      fontFamily: ui.fontFamily,
+      fontSize: ui.hudFontSize,
+      color: ui.scoreColor,
     });
 
     this.livesText = this.add
-      .text(width / 2, 14, "", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "22px",
-        color: "#d6336c",
+      .text(width / 2, ui.hudY, "", {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.hudFontSize,
+        color: ui.livesColor,
       })
       .setOrigin(0.5, 0);
 
     this.add
-      .text(width / 2, height - 8, "← → / A D — move the cat · Esc — pause", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "16px",
-        color: "#64748b",
+      .text(width / 2, height - ui.controlsYFromBottom, ui.controlsHint, {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.controlsFontSize,
+        color: ui.controlsColor,
       })
       .setOrigin(0.5, 1);
 
@@ -123,27 +135,27 @@ export class GameScene extends Phaser.Scene {
         width,
         height,
         0x000000,
-        PAUSE_OVERLAY_ALPHA,
+        ui.pauseOverlayAlpha,
       )
       .setOrigin(0.5)
       .setDepth(20)
       .setVisible(false);
 
     this.pauseTitle = this.add
-      .text(width / 2, height / 2 - 40, "PAUSED", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "48px",
-        color: "#ffffff",
+      .text(width / 2, height / 2 + ui.pauseTitleYOffset, ui.pauseTitle, {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.pauseTitleFontSize,
+        color: ui.pauseTitleColor,
       })
       .setOrigin(0.5)
       .setDepth(21)
       .setVisible(false);
 
     this.pauseHint = this.add
-      .text(width / 2, height / 2 + 20, "Press Esc to continue", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "20px",
-        color: "#94a3b8",
+      .text(width / 2, height / 2 + ui.pauseHintYOffset, ui.pauseHint, {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.pauseHintFontSize,
+        color: ui.pauseHintColor,
       })
       .setOrigin(0.5)
       .setDepth(21)
@@ -172,13 +184,15 @@ export class GameScene extends Phaser.Scene {
 
     this.updatePhase();
 
+    const { difficulty } = GAME_CONFIG;
     const fallSpeed = Math.min(
-      BASE_FALL_SPEED + this.elapsed * SPEED_RAMP_PER_SECOND,
-      MAX_FALL_SPEED,
+      difficulty.baseFallSpeed + this.elapsed * difficulty.speedRampPerSecond,
+      difficulty.maxFallSpeed,
     );
     const spawnInterval = Math.max(
-      BASE_SPAWN_INTERVAL_MS - this.elapsed * SPAWN_INTERVAL_RAMP_PER_SECOND,
-      MIN_SPAWN_INTERVAL_MS,
+      difficulty.baseSpawnIntervalMs -
+        this.elapsed * difficulty.spawnIntervalRampPerSecond,
+      difficulty.minSpawnIntervalMs,
     );
 
     this.movePlayer(seconds);
@@ -203,35 +217,50 @@ export class GameScene extends Phaser.Scene {
   private updatePhase(): void {
     if (this.phase !== 1) return;
 
+    const { phases } = GAME_CONFIG;
     if (
       !this.phaseWarningShown &&
-      this.elapsed >= PHASE_1_DURATION_SECONDS - PHASE_2_WARNING_SECONDS
+<<<<<<< HEAD
+      this.score >= phases.phase2ScoreThreshold - phases.phase2WarningScore
+=======
+      this.score >= PHASE_2_SCORE_THRESHOLD - PHASE_2_WARNING_SCORE
+>>>>>>> 89b6d45cafa175e742379ffec5e5c9f7eeb3c56a
     ) {
       this.phaseWarningShown = true;
       this.showPhaseWarning();
     }
 
-    if (this.elapsed >= PHASE_1_DURATION_SECONDS) {
+<<<<<<< HEAD
+    if (this.score >= phases.phase2ScoreThreshold) {
+=======
+    if (this.score >= PHASE_2_SCORE_THRESHOLD) {
+>>>>>>> 89b6d45cafa175e742379ffec5e5c9f7eeb3c56a
       this.startPhase2();
     }
   }
 
   private showPhaseWarning(): void {
     const { width, height } = this.scale;
+    const { ui } = GAME_CONFIG;
     this.phaseWarning = this.add
-      .text(width / 2, height / 2 - 60, "⚠️ PHASE 2 INCOMING ⚠️", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "34px",
-        color: "#fde047",
-        fontStyle: "bold",
-      })
+      .text(
+        width / 2,
+        height / 2 + ui.phaseWarningYOffset,
+        ui.phaseWarningText,
+        {
+          fontFamily: ui.fontFamily,
+          fontSize: ui.phaseWarningFontSize,
+          color: ui.phaseWarningColor,
+          fontStyle: "bold",
+        },
+      )
       .setOrigin(0.5)
       .setDepth(15);
 
     this.tweens.add({
       targets: this.phaseWarning,
-      alpha: 0.3,
-      duration: 450,
+      alpha: ui.phaseWarningMinAlpha,
+      duration: ui.phaseWarningPulseMs,
       yoyo: true,
       repeat: -1,
     });
@@ -247,225 +276,238 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Hell atmosphere: red sky, demon cat, black hearts.
-    this.cameras.main.setBackgroundColor(PHASE_2_BACKGROUND);
-    this.player.setText(DEMON_EMOJI);
+    const { phases, ui } = GAME_CONFIG;
+    this.cameras.main.setBackgroundColor(phases.phase2Background);
+    this.player.setText(phases.demonEmoji);
     this.updateHud();
 
     const { width, height } = this.scale;
     const banner = this.add
-      .text(width / 2, height / 2 - 60, "🔥 PHASE 2 🔥", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "46px",
-        color: "#fde047",
-        fontStyle: "bold",
-      })
+      .text(
+        width / 2,
+        height / 2 + ui.phase2BannerYOffset,
+        ui.phase2BannerText,
+        {
+          fontFamily: ui.fontFamily,
+          fontSize: ui.phase2BannerFontSize,
+          color: ui.phase2BannerColor,
+          fontStyle: "bold",
+        },
+      )
       .setOrigin(0.5)
       .setDepth(15);
 
     this.tweens.add({
       targets: banner,
       alpha: 0,
-      y: height / 2 - 110,
-      duration: 1400,
+      y: height / 2 + ui.phase2BannerEndYOffset,
+      duration: ui.phase2BannerDurationMs,
       ease: "Cubic.easeOut",
       onComplete: () => banner.destroy(),
     });
   }
 
   private movePlayer(seconds: number): void {
+    const { player } = GAME_CONFIG;
     let dx = 0;
     if (this.cursors.left.isDown || this.wasd.left.isDown) dx -= 1;
     if (this.cursors.right.isDown || this.wasd.right.isDown) dx += 1;
 
-    this.player.x += dx * PLAYER_SPEED * seconds;
+    this.player.x += dx * player.speed * seconds;
     this.player.x = Phaser.Math.Clamp(
       this.player.x,
-      PLAYER_HALF_WIDTH,
-      this.scale.width - PLAYER_HALF_WIDTH,
+      player.halfWidth,
+      this.scale.width - player.halfWidth,
     );
   }
 
   private moveItems(fallSpeed: number, seconds: number): void {
+    const { player, item } = GAME_CONFIG;
     for (let i = this.items.length - 1; i >= 0; i--) {
-      const item = this.items[i];
-      item.sprite.y += fallSpeed * seconds;
+      const fallingItem = this.items[i];
+      fallingItem.sprite.y += fallSpeed * seconds;
 
       const distance = Phaser.Math.Distance.Between(
         this.player.x,
         this.player.y,
-        item.sprite.x,
-        item.sprite.y,
+        fallingItem.sprite.x,
+        fallingItem.sprite.y,
       );
 
-      if (distance <= PLAYER_HALF_WIDTH + ITEM_RADIUS) {
+      if (distance <= player.halfWidth + item.radius) {
         this.removeItem(i);
-        this.onCatch(item.kind);
+        this.onCatch(fallingItem.kind);
         continue;
       }
 
-      if (item.sprite.y > this.scale.height + 24) {
+      if (fallingItem.sprite.y > this.scale.height + item.despawnYOffset) {
         this.removeItem(i);
-        if (item.kind === "food") this.onFoodMissed();
+        if (fallingItem.kind === "food") this.onFoodMissed();
       }
     }
   }
 
   private removeItem(index: number): void {
-    const [item] = this.items.splice(index, 1);
-    item.sprite.destroy();
+    const [fallingItem] = this.items.splice(index, 1);
+    fallingItem.sprite.destroy();
   }
 
   private spawnItem(): void {
     const { width } = this.scale;
-    const { kind, emoji } = this.pickItem();
+    const { item } = GAME_CONFIG;
+    const { kind, emoji } = pickItem(this.phase, Math.random());
 
     const sprite = this.add
-      .text(Phaser.Math.Between(40, width - 40), -20, emoji, {
-        fontSize: "36px",
-      })
+      .text(
+        Phaser.Math.Between(item.spawnXMargin, width - item.spawnXMargin),
+        item.spawnY,
+        emoji,
+        { fontSize: item.fontSize },
+      )
       .setOrigin(0.5);
 
     this.items.push({ sprite, kind });
   }
 
-  private pickItem(): { kind: ItemKind; emoji: string } {
-    const roll = Math.random();
-
-    if (this.phase === 2) {
-      // Phase 2 mix: 10% bomb, 10% star, 20% garbage, 60% food.
-      if (roll < BOMB_CHANCE) return { kind: "bomb", emoji: BOMB_EMOJI };
-      if (roll < BOMB_CHANCE + STAR_CHANCE) {
-        return { kind: "star", emoji: STAR_EMOJI };
-      }
-      if (roll < BOMB_CHANCE + STAR_CHANCE + GARBAGE_CHANCE) {
-        return { kind: "garbage", emoji: GARBAGE_EMOJI };
-      }
-      return {
-        kind: "food",
-        emoji: FOOD_EMOJIS[Phaser.Math.Between(0, FOOD_EMOJIS.length - 1)],
-      };
-    }
-
-    // Phase 1 mix: 22% garbage, 78% food.
-    if (roll < GARBAGE_CHANCE) return { kind: "garbage", emoji: GARBAGE_EMOJI };
-    return {
-      kind: "food",
-      emoji: FOOD_EMOJIS[Phaser.Math.Between(0, FOOD_EMOJIS.length - 1)],
-    };
-  }
-
   private onCatch(kind: ItemKind): void {
+    const { scoring, ui } = GAME_CONFIG;
+
     if (kind === "food") {
-      this.score += 1;
+      this.score += scoring.foodScore;
       this.updateHud();
-      this.floatMessage("+1", this.player.x, this.player.y - 40, "#4ade80");
+      this.floatMessage(
+        ui.catchFoodMessage,
+        this.player.x,
+        this.player.y + ui.floatMessageYOffset,
+        ui.catchFoodColor,
+      );
       this.bouncePlayer();
       return;
     }
 
     if (kind === "star") {
-      this.score += 3;
+      this.score += scoring.starScore;
       this.updateHud();
-      this.floatMessage("+3 ⭐", this.player.x, this.player.y - 40, "#facc15");
+      this.floatMessage(
+        ui.catchStarMessage,
+        this.player.x,
+        this.player.y + ui.floatMessageYOffset,
+        ui.catchStarColor,
+      );
       this.bouncePlayer();
       return;
     }
 
     if (kind === "bomb") {
-      this.lives -= 2;
+      this.lives -= scoring.bombDamage;
       this.updateHud();
       this.flashRed();
       this.floatMessage(
-        "💥 bomb!",
+        ui.bombMessage,
         this.player.x,
-        this.player.y - 40,
-        "#f87171",
+        this.player.y + ui.floatMessageYOffset,
+        ui.damageColor,
       );
       this.checkDefeat();
       return;
     }
 
-    this.lives -= 1;
+    this.lives -= scoring.garbageDamage;
     this.updateHud();
     this.flashRed();
     this.floatMessage(
-      "💔 garbage!",
+      ui.garbageMessage,
       this.player.x,
-      this.player.y - 40,
-      "#f87171",
+      this.player.y + ui.floatMessageYOffset,
+      ui.damageColor,
     );
     this.checkDefeat();
   }
 
   private bouncePlayer(): void {
-    this.player.setScale(1.25);
+    const { ui } = GAME_CONFIG;
+    this.player.setScale(ui.bounceScale);
     this.tweens.add({
       targets: this.player,
       scale: 1,
-      duration: 130,
+      duration: ui.bounceDurationMs,
       ease: "Back.out",
     });
   }
 
   private onFoodMissed(): void {
-    this.lives -= 1;
+    const { scoring, ui } = GAME_CONFIG;
+    this.lives -= scoring.missedFoodDamage;
     this.updateHud();
     this.floatMessage(
-      "💔 missed!",
+      ui.missedMessage,
       this.player.x,
-      this.player.y - 40,
-      "#f87171",
+      this.player.y + ui.floatMessageYOffset,
+      ui.damageColor,
     );
     this.checkDefeat();
   }
 
   private checkDefeat(): void {
     if (this.lives <= 0) {
-      this.endGame("The cat ran out of lives!");
+      this.endGame(GAME_CONFIG.ui.gameOverReason);
     }
   }
 
   private endGame(reason: string): void {
     this.gameOver = true;
     const { width, height } = this.scale;
+    const { ui } = GAME_CONFIG;
 
     this.add
-      .rectangle(width / 2, height / 2, width, height, 0x000000, 0.6)
+      .rectangle(
+        width / 2,
+        height / 2,
+        width,
+        height,
+        0x000000,
+        ui.overlayAlpha,
+      )
       .setOrigin(0.5)
       .setDepth(20);
 
     this.add
-      .text(width / 2, height / 2 - 70, "GAME OVER", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "48px",
-        color: "#f87171",
+      .text(width / 2, height / 2 + ui.gameOverTitleYOffset, ui.gameOverTitle, {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.gameOverTitleFontSize,
+        color: ui.gameOverTitleColor,
       })
       .setOrigin(0.5)
       .setDepth(21);
 
     this.add
       .text(width / 2, height / 2, reason, {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "22px",
-        color: "#e2e8f0",
+        fontFamily: ui.fontFamily,
+        fontSize: ui.gameOverReasonFontSize,
+        color: ui.gameOverReasonColor,
       })
       .setOrigin(0.5)
       .setDepth(21);
 
     this.add
-      .text(width / 2, height / 2 + 56, `Score: ${this.score}`, {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "30px",
-        color: "#ffffff",
-      })
+      .text(
+        width / 2,
+        height / 2 + ui.gameOverScoreYOffset,
+        `${ui.scoreLabel}${this.score}`,
+        {
+          fontFamily: ui.fontFamily,
+          fontSize: ui.gameOverScoreFontSize,
+          color: ui.gameOverScoreColor,
+        },
+      )
       .setOrigin(0.5)
       .setDepth(21);
 
     this.add
-      .text(width / 2, height / 2 + 120, "Press R or click to restart", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "20px",
-        color: "#94a3b8",
+      .text(width / 2, height / 2 + ui.restartHintYOffset, ui.restartHint, {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.restartHintFontSize,
+        color: ui.restartHintColor,
       })
       .setOrigin(0.5)
       .setDepth(21);
@@ -477,23 +519,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    this.scoreText.setText(`Score: ${this.score}`);
-    const heart = this.phase === 2 ? PHASE_2_HEART : "❤️";
+    const { ui, phases } = GAME_CONFIG;
+    this.scoreText.setText(`${ui.scoreLabel}${this.score}`);
+    const heart = this.phase === 2 ? phases.phase2Heart : ui.heartEmoji;
     this.livesText.setText(
-      `Lives: ${heart.repeat(Math.max(0, this.lives)) || "💀"}`,
+      `${ui.livesLabel}${heart.repeat(Math.max(0, this.lives)) || ui.deadEmoji}`,
     );
   }
 
   private flashRed(): void {
     const { width, height } = this.scale;
+    const { ui } = GAME_CONFIG;
     const flash = this.add
-      .rectangle(0, 0, width, height, 0xff3333, 0.4)
+      .rectangle(0, 0, width, height, ui.flashColor, ui.flashAlpha)
       .setOrigin(0);
     flash.setDepth(10);
     this.tweens.add({
       targets: flash,
       alpha: 0,
-      duration: 240,
+      duration: ui.flashDurationMs,
       onComplete: () => flash.destroy(),
     });
   }
@@ -504,18 +548,19 @@ export class GameScene extends Phaser.Scene {
     y: number,
     color: string,
   ): void {
+    const { ui } = GAME_CONFIG;
     const label = this.add
       .text(x, y, text, {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "20px",
+        fontFamily: ui.fontFamily,
+        fontSize: ui.floatMessageFontSize,
         color,
       })
       .setOrigin(0.5);
     this.tweens.add({
       targets: label,
-      y: y - 36,
+      y: y - ui.floatMessageLift,
       alpha: 0,
-      duration: 700,
+      duration: ui.floatMessageDurationMs,
       onComplete: () => label.destroy(),
     });
   }
