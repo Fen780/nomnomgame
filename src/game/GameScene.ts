@@ -17,6 +17,7 @@ const START_LIVES = 10;
 const GARBAGE_CHANCE = 0.22; // fraction of drops that are garbage
 const FOOD_EMOJIS = ["🍎", "🍕", "🍩", "🍇"] as const;
 const GARBAGE_EMOJI = "🗑️";
+const PAUSE_OVERLAY_ALPHA = 0.6; // dimming of the pause overlay
 
 type ItemKind = "food" | "garbage";
 
@@ -48,6 +49,10 @@ export class GameScene extends Phaser.Scene {
   private elapsed = 0; // seconds since game start
   private spawnTimer = 0; // ms accumulated toward the next drop
   private gameOver = false;
+  private paused = false;
+  private pauseOverlay!: Phaser.GameObjects.Rectangle;
+  private pauseTitle!: Phaser.GameObjects.Text;
+  private pauseHint!: Phaser.GameObjects.Text;
 
   constructor() {
     super("GameScene");
@@ -63,6 +68,7 @@ export class GameScene extends Phaser.Scene {
     this.elapsed = 0;
     this.spawnTimer = 0;
     this.gameOver = false;
+    this.paused = false;
 
     this.player = this.add
       .text(width / 2, height - 52, "🐱", { fontSize: "52px" })
@@ -71,24 +77,58 @@ export class GameScene extends Phaser.Scene {
     this.scoreText = this.add.text(20, 14, "", {
       fontFamily: "system-ui, sans-serif",
       fontSize: "22px",
-      color: "#ffffff",
+      color: "#1e293b",
     });
 
     this.livesText = this.add
       .text(width / 2, 14, "", {
         fontFamily: "system-ui, sans-serif",
         fontSize: "22px",
-        color: "#f472b6",
+        color: "#d6336c",
       })
       .setOrigin(0.5, 0);
 
     this.add
-      .text(width / 2, height - 8, "← → / A D — move the cat", {
+      .text(width / 2, height - 8, "← → / A D — move the cat · Esc — pause", {
         fontFamily: "system-ui, sans-serif",
         fontSize: "16px",
         color: "#64748b",
       })
       .setOrigin(0.5, 1);
+
+    // Pause overlay: created once, shown/hidden on Esc (no per-toggle allocations).
+    this.pauseOverlay = this.add
+      .rectangle(
+        width / 2,
+        height / 2,
+        width,
+        height,
+        0x000000,
+        PAUSE_OVERLAY_ALPHA,
+      )
+      .setOrigin(0.5)
+      .setDepth(20)
+      .setVisible(false);
+
+    this.pauseTitle = this.add
+      .text(width / 2, height / 2 - 40, "PAUSED", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "48px",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5)
+      .setDepth(21)
+      .setVisible(false);
+
+    this.pauseHint = this.add
+      .text(width / 2, height / 2 + 20, "Press Esc to continue", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "20px",
+        color: "#94a3b8",
+      })
+      .setOrigin(0.5)
+      .setDepth(21)
+      .setVisible(false);
 
     this.updateHud();
 
@@ -101,10 +141,12 @@ export class GameScene extends Phaser.Scene {
       left: Phaser.Input.Keyboard.KeyCodes.A,
       right: Phaser.Input.Keyboard.KeyCodes.D,
     }) as Record<"left" | "right", Phaser.Input.Keyboard.Key>;
+
+    this.input.keyboard.on("keydown-ESC", () => this.togglePause());
   }
 
   update(_time: number, delta: number): void {
-    if (this.gameOver) return;
+    if (this.gameOver || this.paused) return;
 
     const seconds = delta / 1000;
     this.elapsed += seconds;
@@ -126,6 +168,15 @@ export class GameScene extends Phaser.Scene {
       this.spawnTimer -= spawnInterval;
       this.spawnItem();
     }
+  }
+
+  private togglePause(): void {
+    if (this.gameOver) return;
+
+    this.paused = !this.paused;
+    this.pauseOverlay.setVisible(this.paused);
+    this.pauseTitle.setVisible(this.paused);
+    this.pauseHint.setVisible(this.paused);
   }
 
   private movePlayer(seconds: number): void {

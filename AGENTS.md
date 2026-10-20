@@ -37,8 +37,8 @@
 Если возможно, предложи выполнить:
 
 ```bash
-npm run typecheck
-npm run build
+pnpm run typecheck
+pnpm run build
 ```
 
 ## Запрещено
