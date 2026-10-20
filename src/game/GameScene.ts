@@ -19,7 +19,19 @@ const FOOD_EMOJIS = ["🍎", "🍕", "🍩", "🍇"] as const;
 const GARBAGE_EMOJI = "🗑️";
 const PAUSE_OVERLAY_ALPHA = 0.6; // dimming of the pause overlay
 
-type ItemKind = "food" | "garbage";
+// ── Phase 2 (hell mode) ─────────────────────────────────────────────────────
+const PHASE_1_DURATION_SECONDS = 60; // active play time before phase 2 starts
+const PHASE_2_WARNING_SECONDS = 5; // warning shown this many seconds before phase 2
+const BOMB_CHANCE = 0.1; // phase 2: fraction of drops that are bombs
+const STAR_CHANCE = 0.1; // phase 2: fraction of drops that are bonus stars
+const BOMB_EMOJI = "💣";
+const STAR_EMOJI = "⭐";
+const DEMON_EMOJI = "😈"; // the cat turns into a demon in phase 2
+const PHASE_1_BACKGROUND = "#87ceeb"; // light blue sky (phase 1)
+const PHASE_2_BACKGROUND = "#8b0000"; // hell-red background (phase 2)
+const PHASE_2_HEART = "🖤"; // lives hearts turn black in phase 2
+
+type ItemKind = "food" | "garbage" | "bomb" | "star";
 
 interface FallingItem {
   sprite: Phaser.GameObjects.Text;
@@ -50,6 +62,9 @@ export class GameScene extends Phaser.Scene {
   private spawnTimer = 0; // ms accumulated toward the next drop
   private gameOver = false;
   private paused = false;
+  private phase: 1 | 2 = 1;
+  private phaseWarningShown = false;
+  private phaseWarning: Phaser.GameObjects.Text | null = null;
   private pauseOverlay!: Phaser.GameObjects.Rectangle;
   private pauseTitle!: Phaser.GameObjects.Text;
   private pauseHint!: Phaser.GameObjects.Text;
@@ -69,6 +84,10 @@ export class GameScene extends Phaser.Scene {
     this.spawnTimer = 0;
     this.gameOver = false;
     this.paused = false;
+    this.phase = 1;
+    this.phaseWarningShown = false;
+    this.phaseWarning = null;
+    this.cameras.main.setBackgroundColor(PHASE_1_BACKGROUND);
 
     this.player = this.add
       .text(width / 2, height - 52, "🐱", { fontSize: "52px" })
@@ -151,6 +170,8 @@ export class GameScene extends Phaser.Scene {
     const seconds = delta / 1000;
     this.elapsed += seconds;
 
+    this.updatePhase();
+
     const fallSpeed = Math.min(
       BASE_FALL_SPEED + this.elapsed * SPEED_RAMP_PER_SECOND,
       MAX_FALL_SPEED,
@@ -177,6 +198,78 @@ export class GameScene extends Phaser.Scene {
     this.pauseOverlay.setVisible(this.paused);
     this.pauseTitle.setVisible(this.paused);
     this.pauseHint.setVisible(this.paused);
+  }
+
+  private updatePhase(): void {
+    if (this.phase !== 1) return;
+
+    if (
+      !this.phaseWarningShown &&
+      this.elapsed >= PHASE_1_DURATION_SECONDS - PHASE_2_WARNING_SECONDS
+    ) {
+      this.phaseWarningShown = true;
+      this.showPhaseWarning();
+    }
+
+    if (this.elapsed >= PHASE_1_DURATION_SECONDS) {
+      this.startPhase2();
+    }
+  }
+
+  private showPhaseWarning(): void {
+    const { width, height } = this.scale;
+    this.phaseWarning = this.add
+      .text(width / 2, height / 2 - 60, "⚠️ PHASE 2 INCOMING ⚠️", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "34px",
+        color: "#fde047",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5)
+      .setDepth(15);
+
+    this.tweens.add({
+      targets: this.phaseWarning,
+      alpha: 0.3,
+      duration: 450,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  private startPhase2(): void {
+    this.phase = 2;
+
+    if (this.phaseWarning) {
+      this.tweens.killTweensOf(this.phaseWarning);
+      this.phaseWarning.destroy();
+      this.phaseWarning = null;
+    }
+
+    // Hell atmosphere: red sky, demon cat, black hearts.
+    this.cameras.main.setBackgroundColor(PHASE_2_BACKGROUND);
+    this.player.setText(DEMON_EMOJI);
+    this.updateHud();
+
+    const { width, height } = this.scale;
+    const banner = this.add
+      .text(width / 2, height / 2 - 60, "🔥 PHASE 2 🔥", {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "46px",
+        color: "#fde047",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5)
+      .setDepth(15);
+
+    this.tweens.add({
+      targets: banner,
+      alpha: 0,
+      y: height / 2 - 110,
+      duration: 1400,
+      ease: "Cubic.easeOut",
+      onComplete: () => banner.destroy(),
+    });
   }
 
   private movePlayer(seconds: number): void {
@@ -224,10 +317,7 @@ export class GameScene extends Phaser.Scene {
 
   private spawnItem(): void {
     const { width } = this.scale;
-    const isGarbage = Math.random() < GARBAGE_CHANCE;
-    const emoji = isGarbage
-      ? GARBAGE_EMOJI
-      : FOOD_EMOJIS[Phaser.Math.Between(0, FOOD_EMOJIS.length - 1)];
+    const { kind, emoji } = this.pickItem();
 
     const sprite = this.add
       .text(Phaser.Math.Between(40, width - 40), -20, emoji, {
@@ -235,7 +325,33 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    this.items.push({ sprite, kind: isGarbage ? "garbage" : "food" });
+    this.items.push({ sprite, kind });
+  }
+
+  private pickItem(): { kind: ItemKind; emoji: string } {
+    const roll = Math.random();
+
+    if (this.phase === 2) {
+      // Phase 2 mix: 10% bomb, 10% star, 20% garbage, 60% food.
+      if (roll < BOMB_CHANCE) return { kind: "bomb", emoji: BOMB_EMOJI };
+      if (roll < BOMB_CHANCE + STAR_CHANCE) {
+        return { kind: "star", emoji: STAR_EMOJI };
+      }
+      if (roll < BOMB_CHANCE + STAR_CHANCE + GARBAGE_CHANCE) {
+        return { kind: "garbage", emoji: GARBAGE_EMOJI };
+      }
+      return {
+        kind: "food",
+        emoji: FOOD_EMOJIS[Phaser.Math.Between(0, FOOD_EMOJIS.length - 1)],
+      };
+    }
+
+    // Phase 1 mix: 22% garbage, 78% food.
+    if (roll < GARBAGE_CHANCE) return { kind: "garbage", emoji: GARBAGE_EMOJI };
+    return {
+      kind: "food",
+      emoji: FOOD_EMOJIS[Phaser.Math.Between(0, FOOD_EMOJIS.length - 1)],
+    };
   }
 
   private onCatch(kind: ItemKind): void {
@@ -243,13 +359,29 @@ export class GameScene extends Phaser.Scene {
       this.score += 1;
       this.updateHud();
       this.floatMessage("+1", this.player.x, this.player.y - 40, "#4ade80");
-      this.player.setScale(1.25);
-      this.tweens.add({
-        targets: this.player,
-        scale: 1,
-        duration: 130,
-        ease: "Back.out",
-      });
+      this.bouncePlayer();
+      return;
+    }
+
+    if (kind === "star") {
+      this.score += 3;
+      this.updateHud();
+      this.floatMessage("+3 ⭐", this.player.x, this.player.y - 40, "#facc15");
+      this.bouncePlayer();
+      return;
+    }
+
+    if (kind === "bomb") {
+      this.lives -= 2;
+      this.updateHud();
+      this.flashRed();
+      this.floatMessage(
+        "💥 bomb!",
+        this.player.x,
+        this.player.y - 40,
+        "#f87171",
+      );
+      this.checkDefeat();
       return;
     }
 
@@ -263,6 +395,16 @@ export class GameScene extends Phaser.Scene {
       "#f87171",
     );
     this.checkDefeat();
+  }
+
+  private bouncePlayer(): void {
+    this.player.setScale(1.25);
+    this.tweens.add({
+      targets: this.player,
+      scale: 1,
+      duration: 130,
+      ease: "Back.out",
+    });
   }
 
   private onFoodMissed(): void {
@@ -336,8 +478,9 @@ export class GameScene extends Phaser.Scene {
 
   private updateHud(): void {
     this.scoreText.setText(`Score: ${this.score}`);
+    const heart = this.phase === 2 ? PHASE_2_HEART : "❤️";
     this.livesText.setText(
-      `Lives: ${"❤️".repeat(Math.max(0, this.lives)) || "💀"}`,
+      `Lives: ${heart.repeat(Math.max(0, this.lives)) || "💀"}`,
     );
   }
 
