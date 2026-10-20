@@ -1,7 +1,48 @@
 import Phaser from "phaser";
+<<<<<<< HEAD
 import { GAME_CONFIG } from "./gameConfig";
 import { pickItem } from "./items";
 import type { FallingItem, ItemKind } from "./types";
+=======
+
+// ── Gameplay parameters (tune here) ─────────────────────────────────────────
+const PLAYER_SPEED = 340; // px/sec horizontal cat movement
+const PLAYER_HALF_WIDTH = 26; // collision radius of the cat
+const ITEM_RADIUS = 17; // collision radius of a falling item
+
+const BASE_FALL_SPEED = 150; // px/sec at game start
+const MAX_FALL_SPEED = 650; // px/sec cap
+const SPEED_RAMP_PER_SECOND = 6; // px/sec added to fall speed every second
+
+const BASE_SPAWN_INTERVAL_MS = 1000; // ms between drops at game start
+const MIN_SPAWN_INTERVAL_MS = 320; // ms cap
+const SPAWN_INTERVAL_RAMP_PER_SECOND = 10; // ms removed from interval every second
+
+const START_LIVES = 10;
+const GARBAGE_CHANCE = 0.22; // fraction of drops that are garbage
+const FOOD_EMOJIS = ["🍎", "🍕", "🍩", "🍇"] as const;
+const GARBAGE_EMOJI = "🗑️";
+const PAUSE_OVERLAY_ALPHA = 0.6; // dimming of the pause overlay
+
+// ── Phase 2 (hell mode) ─────────────────────────────────────────────────────
+const PHASE_2_SCORE_THRESHOLD = 20; // score needed to reach phase 2
+const PHASE_2_WARNING_SCORE = 5; // warning shown this many points before the threshold
+const BOMB_CHANCE = 0.1; // phase 2: fraction of drops that are bombs
+const STAR_CHANCE = 0.1; // phase 2: fraction of drops that are bonus stars
+const BOMB_EMOJI = "💣";
+const STAR_EMOJI = "⭐";
+const DEMON_EMOJI = "😈"; // the cat turns into a demon in phase 2
+const PHASE_1_BACKGROUND = "#87ceeb"; // light blue sky (phase 1)
+const PHASE_2_BACKGROUND = "#8b0000"; // hell-red background (phase 2)
+const PHASE_2_HEART = "🖤"; // lives hearts turn black in phase 2
+
+type ItemKind = "food" | "garbage" | "bomb" | "star";
+
+interface FallingItem {
+  sprite: Phaser.GameObjects.Text;
+  kind: ItemKind;
+}
+>>>>>>> 89b6d45cafa175e742379ffec5e5c9f7eeb3c56a
 
 /**
  * "Hungry Cat" — a cat catches food falling from the sky.
@@ -179,13 +220,21 @@ export class GameScene extends Phaser.Scene {
     const { phases } = GAME_CONFIG;
     if (
       !this.phaseWarningShown &&
+<<<<<<< HEAD
       this.score >= phases.phase2ScoreThreshold - phases.phase2WarningScore
+=======
+      this.score >= PHASE_2_SCORE_THRESHOLD - PHASE_2_WARNING_SCORE
+>>>>>>> 89b6d45cafa175e742379ffec5e5c9f7eeb3c56a
     ) {
       this.phaseWarningShown = true;
       this.showPhaseWarning();
     }
 
+<<<<<<< HEAD
     if (this.score >= phases.phase2ScoreThreshold) {
+=======
+    if (this.score >= PHASE_2_SCORE_THRESHOLD) {
+>>>>>>> 89b6d45cafa175e742379ffec5e5c9f7eeb3c56a
       this.startPhase2();
     }
   }
