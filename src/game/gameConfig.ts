@@ -12,14 +12,15 @@
  *    item        – falling items: collision size, spawn position
  *    difficulty  – how fast the game ramps up over time
  *    scoring     – lives, points, damage
+ *    combo       – consecutive-catch multiplier (step, cap, look)
  *    drops       – what falls from the sky and with what probability
- *    phases      – phase 1 → phase 2 (hell mode) timing and look
+ *    phases      – phase 1 → 2 (hell) → 3 (void) thresholds and look
  *    ui          – all texts, colors, font sizes and layout offsets
  * ─────────────────────────────────────────────────────────────────────────────
  */
 export const GAME_CONFIG = {
   canvas: {
-    width: 800, // px
+    width: 600, // px
     height: 500, // px
     backgroundColor: "#87ceeb", // light blue sky
   },
@@ -27,7 +28,8 @@ export const GAME_CONFIG = {
   player: {
     emoji: "🐱",
     fontSize: "52px",
-    speed: 340, // px/sec horizontal movement
+    speed: 440, // px/sec horizontal movement
+    mouseLerpSpeed: 14, // how quickly the cat follows the mouse (per second)
     halfWidth: 26, // collision radius (px)
     yFromBottom: 52, // distance from the bottom edge (px)
   },
@@ -38,12 +40,15 @@ export const GAME_CONFIG = {
     spawnXMargin: 40, // min distance from left/right edges at spawn (px)
     spawnY: -20, // spawn point above the screen (px)
     despawnYOffset: 24, // how far below the screen before removal (px)
+    magnetDurationMs: 5000, // how long the magnet power-up pulls food
+    magnetPullSpeed: 300, // px/sec food drifts toward the cat while magnetic
+    phase3DriftSpeed: 70, // max horizontal drift of phase 3 diagonal drops
   },
 
   difficulty: {
     baseFallSpeed: 150, // px/sec at game start
     maxFallSpeed: 650, // px/sec cap
-    speedRampPerSecond: 6, // px/sec added to fall speed every second
+    speedRampPerSecond: 4, // px/sec added to fall speed every second
     baseSpawnIntervalMs: 1000, // ms between drops at game start
     minSpawnIntervalMs: 320, // ms cap
     spawnIntervalRampPerSecond: 10, // ms removed from interval every second
@@ -55,26 +60,50 @@ export const GAME_CONFIG = {
     starScore: 3, // points for catching a star (phase 2)
     bombDamage: 2, // lives lost when catching a bomb (phase 2)
     garbageDamage: 1, // lives lost when catching garbage
-    missedFoodDamage: 1, // lives lost when food falls to the ground
+    missedFoodDamage: 0, // lives lost when food falls (0 = a miss only breaks the combo)
+  },
+
+  // Combo: consecutive food catches multiply the score; any damage or
+  // missed food resets the streak.
+  combo: {
+    catchesPerStep: 3, // streak length needed for +1 multiplier
+    maxMultiplier: 5,
+    comboTextOffsetX: 160, // px to the right of the score text
+    comboFontSize: "20px",
+    comboColor: "#f97316",
+    comboPulseScale: 1.35, // scale pulse when the multiplier grows
+    comboPulseMs: 150,
   },
 
   drops: {
-    garbageChance: 0.22, // fraction of drops that are garbage
+    garbageChance: 0.15, // phase 1: fraction of drops that are garbage
     bombChance: 0.1, // phase 2: fraction of drops that are bombs
     starChance: 0.1, // phase 2: fraction of drops that are bonus stars
+    phase3BombChance: 0.15, // phase 3: bombs get more frequent
+    phase3StarChance: 0.15, // phase 3: stars too — high risk, high reward
+    phase3GarbageChance: 0.18, // phase 3: garbage rate
+    magnetChance: 0.04, // power-up: pulls food toward the cat for a while
+    shieldChance: 0.04, // power-up: absorbs one garbage/bomb hit
     foodEmojis: ["🍎", "🍕", "🍩", "🍇"],
     garbageEmoji: "🗑️",
     bombEmoji: "💣",
     starEmoji: "⭐",
+    magnetEmoji: "🧲",
+    shieldEmoji: "🛡️",
   },
 
   phases: {
     phase2ScoreThreshold: 20, // score needed to reach phase 2
     phase2WarningScore: 5, // warning shown this many points before the threshold
+    phase3ScoreThreshold: 60, // score needed to reach phase 3
+    phase3WarningScore: 5, // warning shown this many points before the threshold
     phase1Background: "#87ceeb", // light blue sky
     phase2Background: "#8b0000", // hell-red background
+    phase3Background: "#1a0b2e", // deep void purple
     phase2Heart: "🖤", // lives hearts turn black in phase 2
+    phase3Heart: "🖤", // and stay black in phase 3
     demonEmoji: "😈", // the cat turns into a demon in phase 2
+    phase3Emoji: "👻", // and ascends into a spirit in phase 3
   },
 
   ui: {
@@ -82,8 +111,10 @@ export const GAME_CONFIG = {
 
     // HUD (top of the screen)
     scoreLabel: "Score: ",
+    bestLabel: "Best: ",
     livesLabel: "Lives: ",
     heartEmoji: "❤️",
+    shieldHudBadge: " 🛡️", // shown next to hearts while a shield is active
     deadEmoji: "💀",
     hudFontSize: "22px",
     hudY: 14, // top offset (px)
@@ -92,7 +123,7 @@ export const GAME_CONFIG = {
     livesColor: "#d6336c",
 
     // Controls hint (bottom of the screen)
-    controlsHint: "← → / A D — move the cat · Esc — pause",
+    controlsHint: "← → / A D or mouse — move · Esc — pause · M — sound",
     controlsFontSize: "16px",
     controlsColor: "#64748b",
     controlsYFromBottom: 8, // distance from the bottom edge (px)
@@ -124,9 +155,15 @@ export const GAME_CONFIG = {
     phase2BannerEndYOffset: -110, // end position relative to screen center (px)
     phase2BannerDurationMs: 1400, // fade-out duration
 
+    // Phase 3 banner
+    phase3BannerText: "👻 PHASE 3 👻",
+    phase3BannerFontSize: "46px",
+    phase3BannerColor: "#c4b5fd",
+
     // Game over screen
     overlayAlpha: 0.6, // dimming behind the game-over text
     gameOverTitle: "GAME OVER",
+    gameOverRecordTitle: "🏆 NEW RECORD!", // shown instead when the best score is beaten
     gameOverTitleFontSize: "48px",
     gameOverTitleColor: "#f87171",
     gameOverTitleYOffset: -70, // relative to screen center (px)
@@ -135,10 +172,12 @@ export const GAME_CONFIG = {
     gameOverScoreFontSize: "30px",
     gameOverScoreColor: "#ffffff",
     gameOverScoreYOffset: 56, // relative to screen center (px)
+    gameOverBestYOffset: 88, // relative to screen center (px)
+    gameOverBestColor: "#fde047",
     restartHint: "Press R or click to restart",
     restartHintFontSize: "20px",
     restartHintColor: "#94a3b8",
-    restartHintYOffset: 120, // relative to screen center (px)
+    restartHintYOffset: 128, // relative to screen center (px)
     gameOverReason: "The cat ran out of lives!",
 
     // Floating messages (above the cat)
@@ -153,6 +192,12 @@ export const GAME_CONFIG = {
     bombMessage: "💥 bomb!",
     garbageMessage: "💔 garbage!",
     missedMessage: "💔 missed!",
+    comboBreakMessage: "combo lost 💔",
+    magnetMessage: "🧲 magnet!",
+    shieldMessage: "🛡️ shield ready!",
+    shieldBlockMessage: "🛡️ blocked!",
+    soundOnMessage: "🔊 sound on",
+    soundOffMessage: "🔇 muted",
     damageColor: "#f87171",
 
     // Effects
