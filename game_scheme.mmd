@@ -1,0 +1,44 @@
+
+flowchart LR
+    Input["Ввод: ← → / A D / Esc / R / клик"]
+    Scene["GameScene<br/>главная сцена и игровой цикл"]
+    Player["Игрок<br/>кот / демон"]
+    Items["Падающие объекты<br/>еда, мусор, бомба, звезда"]
+    Spawner["Появление объектов<br/>spawnItem / pickItem"]
+    Collision["Столкновения и пропуски<br/>moveItems / onCatch / onFoodMissed"]
+    State["Состояние игры<br/>счёт, жизни, время, пауза, поражение"]
+    Phases["Система фаз<br/>фаза 1 → фаза 2 при 20 очках"]
+    Difficulty["Сложность<br/>скорость падения и частота появления"]
+    UI["Интерфейс<br/>счёт, сердца, предупреждения, пауза, конец игры"]
+    Config["Настройки<br/>GAME_CONFIG"]
+
+    Input -->|"команды управления"| Scene
+    Scene -->|"двигает"| Player
+    Scene -->|"вызывает по таймеру"| Spawner
+    Spawner -->|"создаёт"| Items
+    Scene -->|"обновляет движение и проверяет"| Collision
+    Player -->|"позиция"| Collision
+    Items -->|"позиция и тип"| Collision
+    Collision -->|"изменяет счёт и жизни"| State
+    Scene -->|"отслеживает время"| Difficulty
+    Difficulty -->|"задаёт интервал"| Spawner
+    Difficulty -->|"задаёт скорость"| Items
+    State -->|"счёт определяет переход"| Phases
+    Phases -->|"меняет набор предметов"| Spawner
+    Phases -->|"меняет облик"| Player
+    State -->|"пауза / конец игры"| Scene
+    Scene -->|"обновляет отображение"| UI
+    State -->|"счёт и жизни"| UI
+    Phases -->|"фон, сердца и предупреждение"| UI
+    Config -->|"параметры"| Scene
+    Config -->|"вероятности предметов"| Spawner
+    Config -->|"пороги"| Phases
+    Config -->|"скорости и интервалы"| Difficulty
+    Config -->|"тексты и оформление"| UI
+
+    classDef main fill:#18181f,color:#fff,stroke:#18181f,stroke-width:2px
+    classDef highlight fill:#ffb72e,color:#161616,stroke:#9a6100,stroke-width:2px
+    classDef normal fill:#f6f4ed,color:#262626,stroke:#aaa69c,stroke-width:1px
+    class Scene main
+    class Phases,Config highlight
+    class Input,Player,Items,Spawner,Collision,State,Difficulty,UI normal

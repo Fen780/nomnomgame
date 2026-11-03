@@ -118,6 +118,7 @@ pnpm run preview
 ├── AGENTS.md                      # правила для AI-кодинга
 ├── CHANGELOG.md                   # короткий журнал своей работы
 ├── TROUBLESHOOTING.md             # если что-то не запускается
+├── game_scheme.mmd                # схема игры в Mermaid (архитектура и связи систем)
 ├── index.html
 ├── package.json
 ├── tsconfig.json
