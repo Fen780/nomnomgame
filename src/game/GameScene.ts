@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { GAME_CONFIG } from "./gameConfig";
-import { pickItem } from "./items";
+import { pickItem, pickReachableSpawnX } from "./items";
 import { sfx } from "./sounds";
 import type { FallingItem, ItemKind } from "./types";
 
@@ -11,6 +11,7 @@ import type { FallingItem, ItemKind } from "./types";
  * - Catch stars: +3. Catch magnets/shields: power-ups.
  * - Catch garbage or bombs: lose lives (a shield absorbs one hit).
  * - Let food fall to the ground: the combo breaks (no lives lost).
+ * - Catchable drops spawn within the cat's reach; hazards stay random.
  * - Phase 2 (score 20): hell mode. Phase 3 (score 60): the void — diagonal drops.
  * - The best score is saved to localStorage.
  *
@@ -26,8 +27,17 @@ export class GameScene extends Phaser.Scene {
   private items: FallingItem[] = [];
 
   private scoreText!: Phaser.GameObjects.Text;
+  private bestText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private livesText!: Phaser.GameObjects.Text;
+  private livesPlate!: Phaser.GameObjects.Rectangle;
+  private hudPlate!: Phaser.GameObjects.Rectangle;
+  private powerUpPlate!: Phaser.GameObjects.Rectangle;
+  private powerUpText!: Phaser.GameObjects.Text;
+  private magnetAura!: Phaser.GameObjects.Ellipse;
+  private shieldAura!: Phaser.GameObjects.Ellipse;
+  private hudComboSlotWidth = 0;
+  private lastPowerUpText = "";
 
   private score = 0;
   private best = 0;
@@ -36,6 +46,7 @@ export class GameScene extends Phaser.Scene {
   private comboMultiplier = 1;
   private shieldActive = false;
   private magnetMsLeft = 0;
+  private lowLivesTween: Phaser.Tweens.Tween | null = null;
 
   private elapsed = 0; // seconds since game start
   private spawnTimer = 0; // ms accumulated toward the next drop
@@ -74,6 +85,9 @@ export class GameScene extends Phaser.Scene {
     this.phaseWarningShown = false;
     this.phaseWarning = null;
     this.pointerTargetX = null;
+    this.lowLivesTween = null;
+    this.hudComboSlotWidth = 0;
+    this.lastPowerUpText = "";
     this.cameras.main.setBackgroundColor(phases.phase1Background);
 
     this.player = this.add
@@ -82,11 +96,61 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    this.scoreText = this.add.text(ui.scoreX, ui.hudY, "", {
-      fontFamily: ui.fontFamily,
-      fontSize: ui.hudFontSize,
-      color: ui.scoreColor,
-    });
+    // Power-up auras sit behind the cat (depth -1) and follow it every frame.
+    const powerUps = ui.powerUps;
+    this.magnetAura = this.add
+      .ellipse(
+        0,
+        0,
+        powerUps.magnetAura.radius * 2,
+        powerUps.magnetAura.radius * 2,
+        powerUps.magnetAura.color,
+        powerUps.magnetAura.alpha,
+      )
+      .setDepth(-1)
+      .setVisible(false);
+
+    this.shieldAura = this.add
+      .ellipse(
+        0,
+        0,
+        powerUps.shieldAura.radius * 2,
+        powerUps.shieldAura.radius * 2,
+      )
+      .setStrokeStyle(
+        powerUps.shieldAura.strokeWidth,
+        powerUps.shieldAura.color,
+        powerUps.shieldAura.alpha,
+      )
+      .setDepth(-1)
+      .setVisible(false);
+
+    // Score / best / combo share one dark plate so they read on every phase.
+    this.hudPlate = this.add
+      .rectangle(0, 0, 1, 1, ui.hudPlate.fillColor, ui.hudPlate.fillAlpha)
+      .setOrigin(0, 0)
+      .setDepth(ui.hudDepth)
+      .setStrokeStyle(
+        ui.hudPlate.strokeWidth,
+        ui.hudPlate.strokeColor,
+        ui.hudPlate.strokeAlpha,
+      );
+
+    this.scoreText = this.add
+      .text(ui.scoreX, ui.hudY, "", {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.hudFontSize,
+        color: ui.scoreColor,
+      })
+      .setDepth(ui.hudDepth + 1);
+
+    this.bestText = this.add
+      .text(ui.scoreX, ui.hudY + ui.bestYOffset, "", {
+        fontFamily: ui.fontFamily,
+        fontSize: ui.bestFontSize,
+        color: ui.bestColor,
+      })
+      .setDepth(ui.hudDepth + 1);
 
     this.comboText = this.add
       .text(ui.scoreX + GAME_CONFIG.combo.comboTextOffsetX, ui.hudY, "", {
@@ -94,15 +158,34 @@ export class GameScene extends Phaser.Scene {
         fontSize: GAME_CONFIG.combo.comboFontSize,
         color: GAME_CONFIG.combo.comboColor,
       })
+      .setDepth(ui.hudDepth + 1)
       .setVisible(false);
 
+    // Reserve the widest combo label once, so the HUD plate does not resize
+    // when the multiplier appears or grows.
+    this.comboText.setText(`🔥 x${GAME_CONFIG.combo.maxMultiplier}`);
+    this.hudComboSlotWidth = this.comboText.width;
+    this.comboText.setText("");
+
+    // Lives plate first, the hearts sit on top of it (see layoutLivesPlate()).
+    this.livesPlate = this.add
+      .rectangle(0, 0, 1, 1, ui.livesPlate.fillColor, ui.livesPlate.fillAlpha)
+      .setOrigin(0, 0)
+      .setDepth(ui.hudDepth)
+      .setStrokeStyle(
+        ui.livesPlate.strokeWidth,
+        ui.livesPlate.strokeColor,
+        ui.livesPlate.strokeAlpha,
+      );
+
     this.livesText = this.add
-      .text(width / 2, ui.hudY, "", {
+      .text(0, 0, "", {
         fontFamily: ui.fontFamily,
-        fontSize: ui.hudFontSize,
+        fontSize: ui.livesFontSize,
         color: ui.livesColor,
       })
-      .setOrigin(0.5, 0);
+      .setOrigin(1, 0.5)
+      .setDepth(ui.hudDepth + 1);
 
     this.add
       .text(width / 2, height - ui.controlsYFromBottom, ui.controlsHint, {
@@ -146,6 +229,28 @@ export class GameScene extends Phaser.Scene {
       .setDepth(21)
       .setVisible(false);
 
+    // Persistent power-up badge under the lives plate (magnet timer + shield).
+    this.powerUpPlate = this.add
+      .rectangle(0, 0, 1, 1, powerUps.plate.fillColor, powerUps.plate.fillAlpha)
+      .setOrigin(0, 0)
+      .setDepth(ui.hudDepth)
+      .setStrokeStyle(
+        powerUps.plate.strokeWidth,
+        powerUps.plate.strokeColor,
+        powerUps.plate.strokeAlpha,
+      )
+      .setVisible(false);
+
+    this.powerUpText = this.add
+      .text(0, 0, "", {
+        fontFamily: ui.fontFamily,
+        fontSize: powerUps.fontSize,
+        color: powerUps.color,
+      })
+      .setOrigin(1, 0.5)
+      .setDepth(ui.hudDepth + 1)
+      .setVisible(false);
+
     this.updateHud();
 
     if (!this.input.keyboard) {
@@ -167,14 +272,16 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  update(_time: number, delta: number): void {
+  update(time: number, delta: number): void {
     if (this.gameOver || this.paused) return;
 
     const seconds = delta / 1000;
     this.elapsed += seconds;
     if (this.magnetMsLeft > 0) {
       this.magnetMsLeft = Math.max(0, this.magnetMsLeft - delta);
+      this.updatePowerUpHud();
     }
+    this.updatePowerUpAuras(time);
 
     this.updatePhase();
 
@@ -195,7 +302,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnTimer += delta;
     if (this.spawnTimer >= spawnInterval) {
       this.spawnTimer -= spawnInterval;
-      this.spawnItem();
+      this.spawnItem(fallSpeed);
     }
   }
 
@@ -393,18 +500,31 @@ export class GameScene extends Phaser.Scene {
     fallingItem.sprite.destroy();
   }
 
-  private spawnItem(): void {
+  private spawnItem(fallSpeed: number): void {
     const { width } = this.scale;
-    const { item } = GAME_CONFIG;
+    const { item, player } = GAME_CONFIG;
     const { kind, emoji } = pickItem(this.phase, Math.random());
 
+    // Food, stars and power-ups must be catchable, so they spawn inside the
+    // distance the cat can cover while the item falls. Garbage and bombs keep
+    // a uniform spawn and never target the cat.
+    const catchable = kind !== "garbage" && kind !== "bomb";
+    const spawnX = catchable
+      ? pickReachableSpawnX({
+          playerX: this.player.x,
+          playerY: this.player.y,
+          playerSpeed: player.speed,
+          fallSpeed,
+          width,
+          margin: item.spawnXMargin,
+          spawnY: item.spawnY,
+          fairness: item.spawnFairness,
+          rng: Math.random(),
+        })
+      : Phaser.Math.Between(item.spawnXMargin, width - item.spawnXMargin);
+
     const sprite = this.add
-      .text(
-        Phaser.Math.Between(item.spawnXMargin, width - item.spawnXMargin),
-        item.spawnY,
-        emoji,
-        { fontSize: item.fontSize },
-      )
+      .text(spawnX, item.spawnY, emoji, { fontSize: item.fontSize })
       .setOrigin(0.5);
 
     const vx =
@@ -452,11 +572,13 @@ export class GameScene extends Phaser.Scene {
 
     if (kind === "magnet") {
       this.magnetMsLeft = GAME_CONFIG.item.magnetDurationMs;
+      this.updatePowerUpHud();
       this.floatMessage(
         ui.magnetMessage,
         this.player.x,
         this.player.y + ui.floatMessageYOffset,
         ui.catchStarColor,
+        ui.floatPowerUpDurationMs,
       );
       sfx.powerUp();
       return;
@@ -470,6 +592,7 @@ export class GameScene extends Phaser.Scene {
         this.player.x,
         this.player.y + ui.floatMessageYOffset,
         ui.catchStarColor,
+        ui.floatPowerUpDurationMs,
       );
       sfx.powerUp();
       return;
@@ -486,6 +609,7 @@ export class GameScene extends Phaser.Scene {
         this.player.x,
         this.player.y + ui.floatMessageYOffset,
         ui.catchStarColor,
+        ui.floatPowerUpDurationMs,
       );
     } else {
       this.breakCombo();
@@ -593,7 +717,7 @@ export class GameScene extends Phaser.Scene {
         {
           fontFamily: ui.fontFamily,
           fontSize: ui.gameOverTitleFontSize,
-          color: ui.gameOverTitleColor,
+          color: isRecord ? ui.gameOverRecordTitleColor : ui.gameOverTitleColor,
         },
       )
       .setOrigin(0.5)
@@ -622,19 +746,31 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(21);
 
-    this.add
+    const bestText = this.add
       .text(
         width / 2,
         height / 2 + ui.gameOverBestYOffset,
         `${ui.bestLabel}${this.best}`,
         {
           fontFamily: ui.fontFamily,
-          fontSize: ui.gameOverScoreFontSize,
+          fontSize: ui.gameOverBestFontSize,
           color: ui.gameOverBestColor,
+          fontStyle: ui.gameOverBestFontStyle,
         },
       )
       .setOrigin(0.5)
       .setDepth(21);
+
+    if (isRecord) {
+      this.tweens.add({
+        targets: bestText,
+        scale: ui.gameOverRecordPulseScale,
+        duration: ui.gameOverRecordPulseMs,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    }
 
     this.add
       .text(width / 2, height / 2 + ui.restartHintYOffset, ui.restartHint, {
@@ -652,22 +788,168 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    const { ui, phases } = GAME_CONFIG;
+    const { ui } = GAME_CONFIG;
     this.scoreText.setText(`${ui.scoreLabel}${this.score}`);
+    this.bestText.setText(`${ui.bestLabel}${this.best}`);
 
-    const heart =
-      this.phase === 1
-        ? ui.heartEmoji
-        : this.phase === 2
-          ? phases.phase2Heart
-          : phases.phase3Heart;
+    const heart = this.currentHeart();
+    // Measure the plate with a full row of hearts before writing the real
+    // text, so the plate keeps a stable size while hearts are being lost.
+    this.layoutLivesPlate(heart);
+
     const hearts = heart.repeat(Math.max(0, this.lives)) || ui.deadEmoji;
-    this.livesText.setText(
-      `${ui.livesLabel}${hearts}${this.shieldActive ? ui.shieldHudBadge : ""}`,
-    );
+    this.livesText.setText(`${ui.livesLabel}${hearts}`);
+    this.updateLowLivesPulse();
 
     this.comboText.setText(`🔥 x${this.comboMultiplier}`);
     this.comboText.setVisible(this.comboMultiplier > 1);
+
+    this.layoutHudPlate();
+    this.updatePowerUpHud();
+  }
+
+  /** Heart emoji for the current phase (bright ones stay visible on dark backgrounds). */
+  private currentHeart(): string {
+    const { ui, phases } = GAME_CONFIG;
+    if (this.phase === 1) return ui.heartEmoji;
+    return this.phase === 2 ? phases.phase2Heart : phases.phase3Heart;
+  }
+
+  /** Sizes and right-aligns the lives plate and puts the hearts inside it. */
+  private layoutLivesPlate(heart: string): void {
+    const { ui, scoring } = GAME_CONFIG;
+    const plate = ui.livesPlate;
+
+    // Measure with a full row of hearts so the plate does not resize.
+    this.livesText.setText(
+      `${ui.livesLabel}${heart.repeat(scoring.startLives)}`,
+    );
+    const plateWidth = this.livesText.width + plate.paddingX * 2;
+    const plateHeight = this.livesText.height + plate.paddingY * 2;
+    const plateX = this.scale.width - plate.marginRight - plateWidth;
+    const plateY = ui.hudY - plate.paddingY;
+
+    this.livesPlate
+      .setSize(plateWidth, plateHeight)
+      .setPosition(plateX, plateY);
+    this.livesText.setPosition(
+      plateX + plateWidth - plate.paddingX,
+      plateY + plateHeight / 2,
+    );
+  }
+
+  /** Pulses the lives plate when the cat is nearly out of lives. */
+  private updateLowLivesPulse(): void {
+    const { livesPlate } = GAME_CONFIG.ui;
+    const low = this.lives > 0 && this.lives <= livesPlate.lowLivesThreshold;
+
+    if (low && !this.lowLivesTween) {
+      this.lowLivesTween = this.tweens.add({
+        targets: [this.livesPlate, this.livesText],
+        alpha: livesPlate.lowLivesMinAlpha,
+        duration: livesPlate.lowLivesPulseMs,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else if (!low && this.lowLivesTween) {
+      this.lowLivesTween.stop();
+      this.lowLivesTween = null;
+      this.livesPlate.setAlpha(1);
+      this.livesText.setAlpha(1);
+    }
+  }
+
+  /** Sizes and positions the dark plate behind score, best and combo. */
+  private layoutHudPlate(): void {
+    const { ui, combo } = GAME_CONFIG;
+    const plate = ui.hudPlate;
+
+    const comboRight = combo.comboTextOffsetX + this.hudComboSlotWidth;
+    const contentWidth = Math.max(
+      this.scoreText.width,
+      this.bestText.width,
+      comboRight,
+    );
+    const contentHeight = ui.bestYOffset + this.bestText.height;
+    const plateWidth = Math.max(
+      plate.minWidth,
+      contentWidth + plate.paddingX * 2,
+    );
+    const plateHeight = contentHeight + plate.paddingY * 2;
+    const plateX = ui.scoreX - plate.paddingX;
+    const plateY = ui.hudY - plate.paddingY;
+
+    this.hudPlate.setSize(plateWidth, plateHeight).setPosition(plateX, plateY);
+
+    this.scoreText.setPosition(ui.scoreX, ui.hudY);
+    this.bestText.setPosition(ui.scoreX, ui.hudY + ui.bestYOffset);
+    this.comboText.setPosition(
+      ui.scoreX + combo.comboTextOffsetX,
+      ui.hudY + (this.scoreText.height - this.comboText.height) / 2,
+    );
+  }
+
+  /**
+   * Shows active power-ups under the lives plate: the magnet with its remaining
+   * time and the shield while it is still intact. Hidden when nothing is active.
+   */
+  private updatePowerUpHud(): void {
+    const { powerUps } = GAME_CONFIG.ui;
+
+    const parts: string[] = [];
+    if (this.magnetMsLeft > 0) {
+      parts.push(
+        `${powerUps.magnetBadge} ${(this.magnetMsLeft / 1000).toFixed(1)}s`,
+      );
+    }
+    if (this.shieldActive) parts.push(powerUps.shieldBadge);
+
+    const text = parts.join(powerUps.separator);
+    if (text === this.lastPowerUpText) return;
+    this.lastPowerUpText = text;
+
+    const visible = text.length > 0;
+    this.powerUpText.setText(text).setVisible(visible);
+    this.powerUpPlate.setVisible(visible);
+    if (visible) this.layoutPowerUpBadge();
+  }
+
+  /** Right-aligns the power-up badge under the lives plate. */
+  private layoutPowerUpBadge(): void {
+    const { ui } = GAME_CONFIG;
+    const plate = ui.powerUps.plate;
+
+    const width = this.powerUpText.width + plate.paddingX * 2;
+    const height = this.powerUpText.height + plate.paddingY * 2;
+    const x = this.scale.width - ui.livesPlate.marginRight - width;
+    const y = this.livesPlate.y + this.livesPlate.height + ui.powerUps.gapY;
+
+    this.powerUpPlate.setSize(width, height).setPosition(x, y);
+    this.powerUpText.setPosition(x + width - plate.paddingX, y + height / 2);
+  }
+
+  /** Draws the magnet and shield auras around the cat while they are active. */
+  private updatePowerUpAuras(time: number): void {
+    const { magnetAura, shieldAura } = GAME_CONFIG.ui.powerUps;
+
+    const magnetOn = this.magnetMsLeft > 0;
+    this.magnetAura.setVisible(magnetOn);
+    if (magnetOn) {
+      const pulse = (Math.sin(time / magnetAura.pulseMs) + 1) / 2;
+      this.magnetAura
+        .setPosition(this.player.x, this.player.y)
+        .setScale(1 + pulse * magnetAura.pulseScale)
+        .setAlpha(magnetAura.alpha + pulse * magnetAura.pulseAlpha);
+    }
+
+    this.shieldAura.setVisible(this.shieldActive);
+    if (this.shieldActive) {
+      const pulse = (Math.sin(time / shieldAura.pulseMs) + 1) / 2;
+      this.shieldAura
+        .setPosition(this.player.x, this.player.y)
+        .setScale(1 + pulse * shieldAura.pulseScale)
+        .setAlpha(shieldAura.minAlpha + pulse * shieldAura.pulseAlpha);
+    }
   }
 
   private loadBest(): number {
@@ -706,6 +988,7 @@ export class GameScene extends Phaser.Scene {
     x: number,
     y: number,
     color: string,
+    durationMs: number = GAME_CONFIG.ui.floatMessageDurationMs,
   ): void {
     const { ui } = GAME_CONFIG;
     const label = this.add
@@ -719,7 +1002,7 @@ export class GameScene extends Phaser.Scene {
       targets: label,
       y: y - ui.floatMessageLift,
       alpha: 0,
-      duration: ui.floatMessageDurationMs,
+      duration: durationMs,
       onComplete: () => label.destroy(),
     });
   }
