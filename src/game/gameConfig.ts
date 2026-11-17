@@ -26,12 +26,14 @@ export const GAME_CONFIG = {
   },
 
   player: {
-    emoji: "🐱",
-    fontSize: "52px",
     speed: 440, // px/sec horizontal movement
     mouseLerpSpeed: 14, // how quickly the cat follows the mouse (per second)
     halfWidth: 26, // collision radius (px)
     yFromBottom: 52, // distance from the bottom edge (px)
+    displaySize: 76,
+    phase1Texture: "cat",
+    phase2Texture: "demon-cat",
+    phase3Texture: "spirit-cat",
   },
 
   item: {
@@ -43,6 +45,9 @@ export const GAME_CONFIG = {
     magnetDurationMs: 5000, // how long the magnet power-up pulls food
     magnetPullSpeed: 300, // px/sec food drifts toward the cat while magnetic
     phase3DriftSpeed: 70, // max horizontal drift of phase 3 diagonal drops
+    slowdownDurationMs: 5000,
+    slowdownSpeedFactor: 0.5,
+    displaySize: 42,
 
     // Fair spawns: catchable items appear inside the distance the cat can
     // actually cover before the item reaches the cat's row.
@@ -82,6 +87,20 @@ export const GAME_CONFIG = {
     comboColor: "#fdba74", // light orange: readable on the dark HUD plate
     comboPulseScale: 1.35, // scale pulse when the multiplier grows
     comboPulseMs: 150,
+    lessonText: "3 catches = score multiplier!",
+    levelUpText: "COMBO UP!",
+    effectColor: 0xffdf5d,
+    particleCount: 8,
+    particleSpeed: 110,
+    trailColor: 0xff794f,
+    effectDurationMs: 460,
+    trailDurationMs: 180,
+    lessonYRatio: 0.4,
+    upgradeYRatio: 0.32,
+    popScale: 1.2,
+    popLiftPx: 32,
+    particleRadius: 4,
+    trailWidth: 4,
   },
 
   drops: {
@@ -93,12 +112,14 @@ export const GAME_CONFIG = {
     phase3GarbageChance: 0.18, // phase 3: garbage rate
     magnetChance: 0.04, // power-up: pulls food toward the cat for a while
     shieldChance: 0.04, // power-up: absorbs one garbage/bomb hit
-    foodEmojis: ["🍎", "🍕", "🍩", "🍇"],
-    garbageEmoji: "🗑️",
-    bombEmoji: "💣",
-    starEmoji: "⭐",
-    magnetEmoji: "🧲",
-    shieldEmoji: "🛡️",
+    slowdownChance: 0.025,
+    foodTextures: ["apple", "pizza", "donut", "grapes"],
+    garbageTexture: "garbage",
+    bombTexture: "bomb",
+    starTexture: "star",
+    magnetTexture: "magnet",
+    shieldTexture: "shield",
+    slowdownTexture: "slowdown",
   },
 
   phases: {
@@ -109,6 +130,9 @@ export const GAME_CONFIG = {
     phase1Background: "#87ceeb", // light blue sky
     phase2Background: "#8b0000", // hell-red background
     phase3Background: "#1a0b2e", // deep void purple
+    phase1BackgroundTexture: "background-garden",
+    phase2BackgroundTexture: "background-volcano",
+    phase3BackgroundTexture: "background-cosmos",
     phase2Heart: "💖", // bright hearts stay readable on the hell-red background
     phase3Heart: "💜", // and on the void-purple background
     demonEmoji: "😈", // the cat turns into a demon in phase 2
@@ -117,6 +141,7 @@ export const GAME_CONFIG = {
 
   ui: {
     fontFamily: "system-ui, sans-serif",
+    comboLessonDurationMs: 1800,
 
     // HUD (top of the screen)
     scoreLabel: "Score: ",
@@ -173,6 +198,8 @@ export const GAME_CONFIG = {
       color: "#f8fafc",
       magnetBadge: "🧲",
       shieldBadge: "🛡️",
+      slowdownBadge: "🐢",
+      slowdownMessage: "🐢 time slowed!",
       separator: " · ",
       gapY: 6, // distance below the lives plate (px)
       plate: {
@@ -289,6 +316,8 @@ export const GAME_CONFIG = {
     damageColor: "#f87171",
 
     // Effects
+    comboLevelFontSize: "42px",
+    comboLessonColor: "#fff4bf",
     bounceScale: 1.25, // cat scale when catching food/star
     bounceDurationMs: 130,
     flashColor: 0xff3333, // red screen flash on damage

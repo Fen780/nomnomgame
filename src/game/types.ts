@@ -7,11 +7,12 @@ export type ItemKind =
   | "bomb"
   | "star"
   | "magnet"
-  | "shield";
+  | "shield"
+  | "slowdown";
 
 /** A falling item: its on-screen sprite, its kind and horizontal drift. */
 export interface FallingItem {
-  sprite: Phaser.GameObjects.Text;
+  sprite: Phaser.GameObjects.Image;
   kind: ItemKind;
   /** Horizontal drift (px/sec); non-zero for phase 3 diagonal drops. */
   vx: number;

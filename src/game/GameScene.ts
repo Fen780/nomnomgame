@@ -3,6 +3,22 @@ import { GAME_CONFIG } from "./gameConfig";
 import { pickItem, pickReachableSpawnX } from "./items";
 import { sfx } from "./sounds";
 import type { FallingItem, ItemKind } from "./types";
+import appleUrl from "../../assets/apple.svg?url&no-inline";
+import backgroundCosmosUrl from "../../assets/background-cosmos.svg?url&no-inline";
+import backgroundGardenUrl from "../../assets/background-garden.svg?url&no-inline";
+import backgroundVolcanoUrl from "../../assets/background-volcano.svg?url&no-inline";
+import bombUrl from "../../assets/bomb.svg?url&no-inline";
+import catUrl from "../../assets/cat.svg?url&no-inline";
+import demonCatUrl from "../../assets/demon-cat.svg?url&no-inline";
+import donutUrl from "../../assets/donut.svg?url&no-inline";
+import garbageUrl from "../../assets/garbage.svg?url&no-inline";
+import grapesUrl from "../../assets/grapes.svg?url&no-inline";
+import magnetUrl from "../../assets/magnet.svg?url&no-inline";
+import pizzaUrl from "../../assets/pizza.svg?url&no-inline";
+import shieldUrl from "../../assets/shield.svg?url&no-inline";
+import slowdownUrl from "../../assets/slowdown.svg?url&no-inline";
+import spiritCatUrl from "../../assets/spirit-cat.svg?url&no-inline";
+import starUrl from "../../assets/star.svg?url&no-inline";
 
 /**
  * "Hungry Cat" — a cat catches food falling from the sky.
@@ -21,7 +37,8 @@ import type { FallingItem, ItemKind } from "./types";
 export class GameScene extends Phaser.Scene {
   private static readonly BEST_KEY = "hungry-cat-best";
 
-  private player!: Phaser.GameObjects.Text;
+  private player!: Phaser.GameObjects.Image;
+  private background!: Phaser.GameObjects.Image;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<"left" | "right", Phaser.Input.Keyboard.Key>;
   private items: FallingItem[] = [];
@@ -46,6 +63,8 @@ export class GameScene extends Phaser.Scene {
   private comboMultiplier = 1;
   private shieldActive = false;
   private magnetMsLeft = 0;
+  private slowdownMsLeft = 0;
+  private comboLessonShown = false;
   private lowLivesTween: Phaser.Tweens.Tween | null = null;
 
   private elapsed = 0; // seconds since game start
@@ -64,6 +83,36 @@ export class GameScene extends Phaser.Scene {
     super("GameScene");
   }
 
+  preload(): void {
+    const textures: Record<string, string> = {
+      cat: catUrl,
+      "demon-cat": demonCatUrl,
+      "spirit-cat": spiritCatUrl,
+      apple: appleUrl,
+      pizza: pizzaUrl,
+      donut: donutUrl,
+      grapes: grapesUrl,
+      garbage: garbageUrl,
+      bomb: bombUrl,
+      star: starUrl,
+      magnet: magnetUrl,
+      shield: shieldUrl,
+      slowdown: slowdownUrl,
+      "background-garden": backgroundGardenUrl,
+      "background-volcano": backgroundVolcanoUrl,
+      "background-cosmos": backgroundCosmosUrl,
+    };
+
+    for (const [key, url] of Object.entries(textures)) {
+      const background = key.startsWith("background-");
+      this.load.svg(
+        key,
+        url,
+        background ? { width: 600, height: 500 } : { width: 128, height: 128 },
+      );
+    }
+  }
+
   create(): void {
     const { width, height } = this.scale;
     const { ui, player, phases } = GAME_CONFIG;
@@ -77,6 +126,8 @@ export class GameScene extends Phaser.Scene {
     this.comboMultiplier = 1;
     this.shieldActive = false;
     this.magnetMsLeft = 0;
+    this.slowdownMsLeft = 0;
+    this.comboLessonShown = false;
     this.elapsed = 0;
     this.spawnTimer = 0;
     this.gameOver = false;
@@ -88,13 +139,15 @@ export class GameScene extends Phaser.Scene {
     this.lowLivesTween = null;
     this.hudComboSlotWidth = 0;
     this.lastPowerUpText = "";
-    this.cameras.main.setBackgroundColor(phases.phase1Background);
+    this.background = this.add
+      .image(width / 2, height / 2, phases.phase1BackgroundTexture)
+      .setDisplaySize(width, height)
+      .setDepth(-10);
 
     this.player = this.add
-      .text(width / 2, height - player.yFromBottom, player.emoji, {
-        fontSize: player.fontSize,
-      })
-      .setOrigin(0.5);
+      .image(width / 2, height - player.yFromBottom, player.phase1Texture)
+      .setDisplaySize(player.displaySize, player.displaySize)
+      .setDepth(1);
 
     // Power-up auras sit behind the cat (depth -1) and follow it every frame.
     const powerUps = ui.powerUps;
@@ -281,6 +334,10 @@ export class GameScene extends Phaser.Scene {
       this.magnetMsLeft = Math.max(0, this.magnetMsLeft - delta);
       this.updatePowerUpHud();
     }
+    if (this.slowdownMsLeft > 0) {
+      this.slowdownMsLeft = Math.max(0, this.slowdownMsLeft - delta);
+      this.updatePowerUpHud();
+    }
     this.updatePowerUpAuras(time);
 
     this.updatePhase();
@@ -297,7 +354,10 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.movePlayer(seconds);
-    this.moveItems(fallSpeed, seconds);
+    this.moveItems(
+      fallSpeed * (this.slowdownMsLeft > 0 ? GAME_CONFIG.item.slowdownSpeedFactor : 1),
+      seconds,
+    );
 
     this.spawnTimer += delta;
     if (this.spawnTimer >= spawnInterval) {
@@ -385,10 +445,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     const { phases, ui } = GAME_CONFIG;
-    this.cameras.main.setBackgroundColor(
-      next === 2 ? phases.phase2Background : phases.phase3Background,
+    this.background.setTexture(
+      next === 2 ? phases.phase2BackgroundTexture : phases.phase3BackgroundTexture,
     );
-    this.player.setText(next === 2 ? phases.demonEmoji : phases.phase3Emoji);
+    this.player.setTexture(
+      next === 2
+        ? GAME_CONFIG.player.phase2Texture
+        : GAME_CONFIG.player.phase3Texture,
+    );
     this.updateHud();
     sfx.phaseUp();
 
@@ -484,7 +548,7 @@ export class GameScene extends Phaser.Scene {
 
       if (distance <= player.halfWidth + item.radius) {
         this.removeItem(i);
-        this.onCatch(fallingItem.kind);
+        this.onCatch(fallingItem.kind, fallingItem.sprite.x, fallingItem.sprite.y);
         continue;
       }
 
@@ -503,7 +567,7 @@ export class GameScene extends Phaser.Scene {
   private spawnItem(fallSpeed: number): void {
     const { width } = this.scale;
     const { item, player } = GAME_CONFIG;
-    const { kind, emoji } = pickItem(this.phase, Math.random());
+    const { kind, texture } = pickItem(this.phase, Math.random());
 
     // Food, stars and power-ups must be catchable, so they spawn inside the
     // distance the cat can cover while the item falls. Garbage and bombs keep
@@ -524,8 +588,8 @@ export class GameScene extends Phaser.Scene {
       : Phaser.Math.Between(item.spawnXMargin, width - item.spawnXMargin);
 
     const sprite = this.add
-      .text(spawnX, item.spawnY, emoji, { fontSize: item.fontSize })
-      .setOrigin(0.5);
+      .image(spawnX, item.spawnY, texture)
+      .setDisplaySize(item.displaySize, item.displaySize);
 
     const vx =
       this.phase === 3
@@ -535,12 +599,27 @@ export class GameScene extends Phaser.Scene {
     this.items.push({ sprite, kind, vx });
   }
 
-  private onCatch(kind: ItemKind): void {
+  private onCatch(kind: ItemKind, catchX: number, catchY: number): void {
     const { scoring, ui } = GAME_CONFIG;
 
     if (kind === "food") {
+      const previousMultiplier = this.comboMultiplier;
       this.combo += 1;
       this.updateComboMultiplier();
+      if (this.comboMultiplier > previousMultiplier) {
+        if (!this.comboLessonShown) {
+          this.comboLessonShown = true;
+          this.floatMessage(
+            GAME_CONFIG.combo.lessonText,
+            this.scale.width / 2,
+            this.scale.height * GAME_CONFIG.combo.lessonYRatio,
+            GAME_CONFIG.ui.comboLessonColor,
+            GAME_CONFIG.ui.comboLessonDurationMs,
+          );
+        }
+        this.showComboUpgrade();
+      }
+      this.showCatchTrail(catchX, catchY);
 
       const gained = scoring.foodScore * this.comboMultiplier;
       this.score += gained;
@@ -598,6 +677,20 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (kind === "slowdown") {
+      this.slowdownMsLeft = GAME_CONFIG.item.slowdownDurationMs;
+      this.updatePowerUpHud();
+      this.floatMessage(
+        ui.powerUps.slowdownMessage,
+        this.player.x,
+        this.player.y + ui.floatMessageYOffset,
+        ui.catchStarColor,
+        ui.floatPowerUpDurationMs,
+      );
+      sfx.powerUp();
+      return;
+    }
+
     // Garbage or bomb.
     const damage = kind === "bomb" ? scoring.bombDamage : scoring.garbageDamage;
 
@@ -630,10 +723,16 @@ export class GameScene extends Phaser.Scene {
 
   private bouncePlayer(): void {
     const { ui } = GAME_CONFIG;
-    this.player.setScale(ui.bounceScale);
+    const baseScaleX = this.player.scaleX;
+    const baseScaleY = this.player.scaleY;
+    this.player.setScale(
+      baseScaleX * ui.bounceScale,
+      baseScaleY * ui.bounceScale,
+    );
     this.tweens.add({
       targets: this.player,
-      scale: 1,
+      scaleX: baseScaleX,
+      scaleY: baseScaleY,
       duration: ui.bounceDurationMs,
       ease: "Back.out",
     });
@@ -658,6 +757,74 @@ export class GameScene extends Phaser.Scene {
       scale: 1,
       duration: combo.comboPulseMs,
       ease: "Back.out",
+    });
+  }
+
+  private showComboUpgrade(): void {
+    const { combo, ui } = GAME_CONFIG;
+    const { width, height } = this.scale;
+    const centerY = height * combo.upgradeYRatio;
+    const label = this.add
+      .text(
+        width / 2,
+        centerY,
+        `${combo.levelUpText} x${this.comboMultiplier}`,
+        {
+          fontFamily: ui.fontFamily,
+          fontSize: ui.comboLevelFontSize,
+          color: ui.comboLessonColor,
+          fontStyle: "bold",
+          stroke: "#493b4a",
+          strokeThickness: 6,
+        },
+      )
+      .setOrigin(0.5)
+      .setDepth(12);
+    const flashColor = Phaser.Display.Color.IntegerToRGB(combo.effectColor);
+    this.cameras.main.flash(
+      combo.effectDurationMs,
+      flashColor.r,
+      flashColor.g,
+      flashColor.b,
+    );
+    this.tweens.add({
+      targets: label,
+      scale: combo.popScale,
+      alpha: 0,
+      y: label.y - combo.popLiftPx,
+      duration: combo.effectDurationMs,
+      ease: "Cubic.easeOut",
+      onComplete: () => label.destroy(),
+    });
+
+    for (let i = 0; i < combo.particleCount; i++) {
+      const angle = (Math.PI * 2 * i) / combo.particleCount;
+      const particle = this.add
+        .circle(width / 2, centerY, combo.particleRadius, combo.effectColor)
+        .setDepth(11);
+      this.tweens.add({
+        targets: particle,
+        x: particle.x + Math.cos(angle) * combo.particleSpeed,
+        y: particle.y + Math.sin(angle) * combo.particleSpeed,
+        alpha: 0,
+        scale: 0.2,
+        duration: combo.effectDurationMs,
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  private showCatchTrail(x: number, y: number): void {
+    const { combo } = GAME_CONFIG;
+    const trail = this.add
+      .line(0, 0, x, y, this.player.x, this.player.y, combo.trailColor)
+      .setLineWidth(combo.trailWidth)
+      .setDepth(2);
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      duration: combo.trailDurationMs,
+      onComplete: () => trail.destroy(),
     });
   }
 
@@ -900,6 +1067,11 @@ export class GameScene extends Phaser.Scene {
     if (this.magnetMsLeft > 0) {
       parts.push(
         `${powerUps.magnetBadge} ${(this.magnetMsLeft / 1000).toFixed(1)}s`,
+      );
+    }
+    if (this.slowdownMsLeft > 0) {
+      parts.push(
+        `${powerUps.slowdownBadge} ${(this.slowdownMsLeft / 1000).toFixed(1)}s`,
       );
     }
     if (this.shieldActive) parts.push(powerUps.shieldBadge);

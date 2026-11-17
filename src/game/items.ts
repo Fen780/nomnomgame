@@ -5,7 +5,7 @@ import type { ItemKind } from "./types";
 /** The result of picking the next falling item. */
 export interface PickedItem {
   kind: ItemKind;
-  emoji: string;
+  texture: string;
 }
 
 /**
@@ -32,24 +32,27 @@ export function pickItem(phase: 1 | 2 | 3, roll: number): PickedItem {
   let acc = 0;
 
   acc += bombChance;
-  if (roll < acc) return { kind: "bomb", emoji: drops.bombEmoji };
+  if (roll < acc) return { kind: "bomb", texture: drops.bombTexture };
 
   acc += starChance;
-  if (roll < acc) return { kind: "star", emoji: drops.starEmoji };
+  if (roll < acc) return { kind: "star", texture: drops.starTexture };
 
   acc += garbageChance;
-  if (roll < acc) return { kind: "garbage", emoji: drops.garbageEmoji };
+  if (roll < acc) return { kind: "garbage", texture: drops.garbageTexture };
 
   acc += drops.magnetChance;
-  if (roll < acc) return { kind: "magnet", emoji: drops.magnetEmoji };
+  if (roll < acc) return { kind: "magnet", texture: drops.magnetTexture };
 
   acc += drops.shieldChance;
-  if (roll < acc) return { kind: "shield", emoji: drops.shieldEmoji };
+  if (roll < acc) return { kind: "shield", texture: drops.shieldTexture };
+
+  acc += drops.slowdownChance;
+  if (roll < acc) return { kind: "slowdown", texture: drops.slowdownTexture };
 
   return {
     kind: "food",
-    emoji:
-      drops.foodEmojis[Phaser.Math.Between(0, drops.foodEmojis.length - 1)],
+    texture:
+      drops.foodTextures[Phaser.Math.Between(0, drops.foodTextures.length - 1)],
   };
 }
 
