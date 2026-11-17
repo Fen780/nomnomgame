@@ -43,6 +43,15 @@ export const GAME_CONFIG = {
     magnetDurationMs: 5000, // how long the magnet power-up pulls food
     magnetPullSpeed: 300, // px/sec food drifts toward the cat while magnetic
     phase3DriftSpeed: 70, // max horizontal drift of phase 3 diagonal drops
+
+    // Fair spawns: catchable items appear inside the distance the cat can
+    // actually cover before the item reaches the cat's row.
+    spawnFairness: {
+      reactionTimeMs: 150, // player reaction before they start moving (ms)
+      reachFactor: 0.6, // share of the reachable distance used for randomness
+      minReachPx: 70, // smallest random window around the cat (px)
+      maxReachPx: 260, // largest random window around the cat (px)
+    },
   },
 
   difficulty: {
@@ -70,7 +79,7 @@ export const GAME_CONFIG = {
     maxMultiplier: 5,
     comboTextOffsetX: 160, // px to the right of the score text
     comboFontSize: "20px",
-    comboColor: "#f97316",
+    comboColor: "#fdba74", // light orange: readable on the dark HUD plate
     comboPulseScale: 1.35, // scale pulse when the multiplier grows
     comboPulseMs: 150,
   },
@@ -100,8 +109,8 @@ export const GAME_CONFIG = {
     phase1Background: "#87ceeb", // light blue sky
     phase2Background: "#8b0000", // hell-red background
     phase3Background: "#1a0b2e", // deep void purple
-    phase2Heart: "🖤", // lives hearts turn black in phase 2
-    phase3Heart: "🖤", // and stay black in phase 3
+    phase2Heart: "💖", // bright hearts stay readable on the hell-red background
+    phase3Heart: "💜", // and on the void-purple background
     demonEmoji: "😈", // the cat turns into a demon in phase 2
     phase3Emoji: "👻", // and ascends into a spirit in phase 3
   },
@@ -111,16 +120,89 @@ export const GAME_CONFIG = {
 
     // HUD (top of the screen)
     scoreLabel: "Score: ",
-    bestLabel: "Best: ",
+    bestLabel: "🏆 Best: ", // the record stays visible during the whole run
     livesLabel: "Lives: ",
     heartEmoji: "❤️",
-    shieldHudBadge: " 🛡️", // shown next to hearts while a shield is active
     deadEmoji: "💀",
     hudFontSize: "22px",
     hudY: 14, // top offset (px)
     scoreX: 20, // left offset (px)
-    scoreColor: "#1e293b",
-    livesColor: "#d6336c",
+    scoreColor: "#f8fafc", // light text on the dark HUD plate
+    bestFontSize: "18px",
+    bestColor: "#fde047", // yellow record line, readable in every phase
+    bestYOffset: 28, // second HUD line below the score (px)
+    hudDepth: 5, // HUD renders above falling items
+    livesFontSize: "18px", // smaller than the score so 10 hearts fit the plate
+    livesColor: "#f8fafc", // readable on the dark lives plate
+
+    // Dark plate behind the score / best / combo block. Same idea as the lives
+    // plate: the HUD stays readable on the light-blue sky, the hell-red phase 2
+    // and the void-purple phase 3 backgrounds.
+    hudPlate: {
+      fillColor: 0x0f172a,
+      fillAlpha: 0.55,
+      strokeColor: 0xffffff,
+      strokeAlpha: 0.35,
+      strokeWidth: 1,
+      paddingX: 10, // inner spacing left/right (px)
+      paddingY: 5, // inner spacing top/bottom (px)
+      minWidth: 210, // keeps the plate from jumping while the score grows
+    },
+
+    // Dark plate behind the hearts: keeps lives visible on the light blue sky,
+    // the hell-red phase 2 and the void-purple phase 3 backgrounds.
+    // Colors are Phaser numbers (0xRRGGBB) because the plate is a shape, not text.
+    livesPlate: {
+      fillColor: 0x0f172a,
+      fillAlpha: 0.55,
+      strokeColor: 0xffffff,
+      strokeAlpha: 0.35,
+      strokeWidth: 1,
+      paddingX: 10, // inner spacing left/right (px)
+      paddingY: 5, // inner spacing top/bottom (px)
+      marginRight: 20, // distance from the right edge (px)
+      lowLivesThreshold: 3, // lives at or below this make the plate pulse
+      lowLivesPulseMs: 450,
+      lowLivesMinAlpha: 0.45,
+    },
+
+    // Power-up feedback: a persistent badge under the lives plate (the floating
+    // pickup message disappears too fast) and an aura around the cat.
+    powerUps: {
+      fontSize: "18px",
+      color: "#f8fafc",
+      magnetBadge: "🧲",
+      shieldBadge: "🛡️",
+      separator: " · ",
+      gapY: 6, // distance below the lives plate (px)
+      plate: {
+        fillColor: 0x0f172a,
+        fillAlpha: 0.55,
+        strokeColor: 0xffffff,
+        strokeAlpha: 0.35,
+        strokeWidth: 1,
+        paddingX: 8,
+        paddingY: 4,
+      },
+      magnetAura: {
+        radius: 36, // px
+        color: 0x22d3ee, // cyan glow
+        alpha: 0.28,
+        pulseAlpha: 0.16,
+        pulseScale: 0.08,
+        pulseMs: 420, // sine period (ms)
+      },
+      shieldAura: {
+        radius: 40, // px
+        color: 0x93c5fd, // light blue ring
+        strokeWidth: 3,
+        alpha: 0.9,
+        minAlpha: 0.55,
+        pulseAlpha: 0.35,
+        pulseScale: 0.05,
+        pulseMs: 520, // sine period (ms)
+      },
+    },
 
     // Controls hint (bottom of the screen)
     controlsHint: "← → / A D or mouse — move · Esc — pause · M — sound",
@@ -166,6 +248,7 @@ export const GAME_CONFIG = {
     gameOverRecordTitle: "🏆 NEW RECORD!", // shown instead when the best score is beaten
     gameOverTitleFontSize: "48px",
     gameOverTitleColor: "#f87171",
+    gameOverRecordTitleColor: "#fde047", // gold title when the record is beaten
     gameOverTitleYOffset: -70, // relative to screen center (px)
     gameOverReasonFontSize: "22px",
     gameOverReasonColor: "#e2e8f0",
@@ -174,6 +257,10 @@ export const GAME_CONFIG = {
     gameOverScoreYOffset: 56, // relative to screen center (px)
     gameOverBestYOffset: 88, // relative to screen center (px)
     gameOverBestColor: "#fde047",
+    gameOverBestFontSize: "26px",
+    gameOverBestFontStyle: "bold",
+    gameOverRecordPulseScale: 1.08, // record line pulse when a new record is set
+    gameOverRecordPulseMs: 520,
     restartHint: "Press R or click to restart",
     restartHintFontSize: "20px",
     restartHintColor: "#94a3b8",
@@ -185,6 +272,7 @@ export const GAME_CONFIG = {
     floatMessageYOffset: -40, // above the cat (px)
     floatMessageLift: 36, // how far the message floats up (px)
     floatMessageDurationMs: 700,
+    floatPowerUpDurationMs: 1100, // power-up pickups stay on screen longer
     catchFoodMessage: "+1",
     catchFoodColor: "#4ade80",
     catchStarMessage: "+3 ⭐",
